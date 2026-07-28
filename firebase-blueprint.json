@@ -1,0 +1,167 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "User profiles for staff, operators, drivers, and customers",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "state": { "type": "string" },
+        "active": { "type": "boolean" },
+        "vehicleNo": { "type": "string" },
+        "avatar": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "name", "role"]
+    },
+    "products": {
+      "title": "Product",
+      "description": "Water product catalog",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "price": { "type": "number" },
+        "unit": { "type": "string" },
+        "description": { "type": "string" },
+        "image": { "type": "string" },
+        "inStock": { "type": "boolean" },
+        "category": { "type": "string" }
+      }
+    },
+    "inventory": {
+      "title": "InventoryItem",
+      "description": "Raw materials and finished goods inventory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "itemName": { "type": "string" },
+        "category": { "type": "string" },
+        "totalInStock": { "type": "number" },
+        "unit": { "type": "string" },
+        "reorderLevel": { "type": "number" },
+        "costPerUnit": { "type": "number" },
+        "lastRestocked": { "type": "string text" }
+      }
+    },
+    "sales": {
+      "title": "SaleOrder",
+      "description": "Water sales transactions and customer orders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerAddress": { "type": "string text" },
+        "state": { "type": "string" },
+        "items": { "type": "array" },
+        "totalAmount": { "type": "number" },
+        "paymentStatus": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "fulfillmentStatus": { "type": "string" },
+        "driverName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "notes": { "type": "string" }
+      }
+    },
+    "deliveries": {
+      "title": "DeliveryWaybill",
+      "description": "Logistics waybills and delivery tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "waybillNo": { "type": "string" },
+        "driverName": { "type": "string" },
+        "vehicleNo": { "type": "string text" },
+        "customerName": { "type": "string" },
+        "deliveryAddress": { "type": "string" },
+        "state": { "type": "string" },
+        "quantityBags": { "type": "number" },
+        "productName": { "type": "string" },
+        "status": { "type": "string" },
+        "dispatchDate": { "type": "string" },
+        "amountToCollect": { "type": "number" },
+        "amountCollected": { "type": "number" }
+      }
+    },
+    "debts": {
+      "title": "CustomerDebt",
+      "description": "Credit and debt records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "debtorName": { "type": "string" },
+        "debtorPhone": { "type": "string" },
+        "debtorAddress": { "type": "string" },
+        "amountOwed": { "type": "number text" },
+        "amountPaid": { "type": "number" },
+        "status": { "type": "string" },
+        "lastPaymentDate": { "type": "string" },
+        "dueDate": { "type": "string" }
+      }
+    },
+    "collections": {
+      "title": "MoneyCollection",
+      "description": "Daily staff cash and transfer collections",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "collectorName": { "type": "string" },
+        "role": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentMode": { "type": "string" },
+        "date": { "type": "string" },
+        "source": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "production_logs": {
+      "title": "ProductionLog",
+      "description": "Daily production logs from operators",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "operatorName": { "type": "string" },
+        "date": { "type": "string" },
+        "productName": { "type": "string" },
+        "bagsProduced": { "type": "number" },
+        "burstBags": { "type": "number" },
+        "shift": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "claims": {
+      "title": "OperatorClaim",
+      "description": "Operator operational expense claims",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "operatorName": { "type": "string" },
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "settings": {
+      "title": "SystemSettings",
+      "description": "Global enterprise configuration",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string" },
+        "tagline": { "type": "string" },
+        "address": { "type": "string" },
+        "state": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" }
+      }
+    }
+  }
+}

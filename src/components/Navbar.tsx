@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { UserRole } from '../types';
 import { RoleBadge } from './RoleBadge';
 import { TabType } from './Sidebar';
 import { LoginModal } from './auth/LoginModal';
+import { auth, signOut, onAuthStateChanged, FirebaseUser } from '../lib/firebase';
+import { logAuthEvent } from '../services/authLogger';
 import kanyaLogo from '../assets/images/kanya_water_logo_1785244963793.jpg';
 import {
   Droplets,
@@ -17,6 +19,7 @@ import {
   ShoppingBag,
   RotateCcw,
   LogIn,
+  LogOut,
   User,
 } from 'lucide-react';
 
@@ -39,6 +42,35 @@ export const Navbar: React.FC<NavbarProps> = ({ onLoginSuccess }) => {
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showNotificationMenu, setShowNotificationMenu] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (usr) => {
+      setFirebaseUser(usr);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleSignOut = async () => {
+    try {
+      if (currentUser) {
+        logAuthEvent({
+          userId: currentUser.id,
+          userEmail: currentUser.email,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          eventType: 'logout',
+          status: 'success',
+          details: 'User initiated sign out',
+        });
+      }
+      await signOut(auth);
+      setShowRoleMenu(false);
+      onLoginSuccess?.('home');
+    } catch (err) {
+      console.error('Sign out error:', err);
+    }
+  };
 
   const pendingApprovalsCount = productionRecords.filter((r) => r.status === 'pending_approval').length;
   const lowStockCount = inventory.filter((i) => i.totalInStock <= i.minStockAlert).length;
@@ -89,54 +121,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onLoginSuccess }) => {
                 </p>
               </div>
             </button>
-
-            {/* CENTER LOGIN BUTTON */}
-            <div className="flex items-center justify-center">
-              <button
-                onClick={() => setIsLoginModalOpen(true)}
-                className="px-4 sm:px-6 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0"
-              >
-                <LogIn className="w-4 h-4" />
-                <span>Account Login</span>
-                <span className="hidden md:inline bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-semibold">
-                  {currentUser.role.replace('_', ' ').toUpperCase()}
-                </span>
-              </button>
-            </div>
-
-            {/* Quick Role Switcher Bar */}
-            <div className="hidden xl:flex items-center bg-slate-100/80 p-1 rounded-xl border border-slate-200/80">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-2">
-                Roles:
-              </span>
-              {roles.map((r) => {
-                const isActive = currentUser.role === r.role;
-                const IconComp = r.icon;
-                return (
-                  <button
-                    key={r.role}
-                    onClick={() => {
-                      setCurrentUserRole(r.role);
-                      if (onLoginSuccess) {
-                        if (r.role === 'operator') onLoginSuccess('operator_hub');
-                        else if (r.role === 'driver') onLoginSuccess('deliveries');
-                        else if (r.role === 'customer') onLoginSuccess('customer_portal');
-                        else onLoginSuccess('dashboard');
-                      }
-                    }}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-white text-cyan-800 shadow-xs border border-slate-200 font-semibold'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                    }`}
-                    title={r.description}
-                  >
-                    <IconComp className={`w-3.5 h-3.5 ${isActive ? 'text-cyan-600' : 'text-slate-400'}`} />
-                    {r.name}
-                  </button>
-                );
-              })}
-            </div>
 
             {/* User Profile & Actions */}
             <div className="flex items-center gap-3">
@@ -227,15 +211,24 @@ export const Navbar: React.FC<NavbarProps> = ({ onLoginSuccess }) => {
                       <p className="text-[11px] text-cyan-700 font-medium mt-1">📞 {currentUser.phone}</p>
                     </div>
 
-                    <button
-                      onClick={() => {
-                        setShowRoleMenu(false);
-                        setIsLoginModalOpen(true);
-                      }}
-                      className="w-full mb-2 flex items-center justify-center gap-2 px-3 py-2 bg-cyan-700 text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-cyan-800 transition-colors"
-                    >
-                      <LogIn className="w-4 h-4" /> Open Login Portal
-                    </button>
+                    {firebaseUser ? (
+                      <button
+                        onClick={handleSignOut}
+                        className="w-full mb-2 flex items-center justify-center gap-2 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors shadow-xs"
+                      >
+                        <LogOut className="w-4 h-4" /> Sign Out / Lock Portal
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setShowRoleMenu(false);
+                          setIsLoginModalOpen(true);
+                        }}
+                        className="w-full mb-2 flex items-center justify-center gap-2 px-3 py-2 bg-cyan-700 text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-cyan-800 transition-colors"
+                      >
+                        <LogIn className="w-4 h-4" /> Open Login Portal
+                      </button>
+                    )}
 
                     <p className="text-[10px] uppercase font-semibold text-slate-400 px-2 my-1">
                       Quick Role Switch:

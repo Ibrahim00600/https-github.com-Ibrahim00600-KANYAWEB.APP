@@ -38,12 +38,14 @@ export type TabType =
 interface SidebarProps {
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
+  onOpenLoginModal?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onOpenLoginModal }) => {
   const { currentUser, productionRecords, inventory, deliveries, messages } = useApp();
 
   const role = currentUser.role;
+  const isHome = activeTab === 'home';
 
   const pendingApprovalsCount = productionRecords.filter((r) => r.status === 'pending_approval').length;
   const lowStockCount = inventory.filter((i) => i.totalInStock <= i.minStockAlert).length;
@@ -152,6 +154,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
 
   const visibleItems = allNavItems.filter((item) => item.roles.includes(role));
 
+  if (isHome) {
+    return null;
+  }
+
   return (
     <aside className="w-64 bg-slate-900 text-slate-300 min-h-[calc(100vh-4rem)] p-4 flex flex-col justify-between shrink-0 shadow-lg">
       <div className="space-y-6">
@@ -160,52 +166,93 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Current Portal View</p>
           <p className="text-sm font-bold text-cyan-400 mt-0.5 capitalize flex items-center gap-1.5">
             <Droplets className="w-4 h-4 text-cyan-400" />
-            {role.replace('_', ' ')} Portal
+            {isHome ? 'Home Portal' : `${role.replace('_', ' ')} Portal`}
           </p>
           <p className="text-[11px] text-slate-400 mt-1">
-            {role === 'super_admin' && 'Full system control & user admin'}
-            {role === 'manager' && 'Production approval & sales management'}
-            {role === 'operator' && 'Daily factory batch entry'}
-            {role === 'driver' && 'Vehicle load & delivery tracking'}
-            {role === 'customer' && 'Water ordering & delivery tracking'}
+            {isHome && 'Welcome! Sign in or select a workspace to open Main Menu.'}
+            {!isHome && role === 'super_admin' && 'Full system control & user admin'}
+            {!isHome && role === 'manager' && 'Production approval & sales management'}
+            {!isHome && role === 'operator' && 'Daily factory batch entry'}
+            {!isHome && role === 'driver' && 'Vehicle load & delivery tracking'}
+            {!isHome && role === 'customer' && 'Water ordering & delivery tracking'}
           </p>
         </div>
 
         {/* Navigation Section */}
         <div>
           <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 px-3 mb-2">
-            Main Menu
+            Navigation
           </p>
-          <nav className="space-y-1">
-            {visibleItems.map((item) => {
-              const IconComponent = item.icon;
-              const isActive = activeTab === item.id;
-              return (
+
+          {isHome ? (
+            /* HOME PAGE ONLY SHOWS HOME PORTAL & A SIGN-IN LOCK NOTICE */
+            <div className="space-y-3">
+              <button
+                onClick={() => setActiveTab('home')}
+                className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-cyan-600 text-white shadow-md shadow-cyan-600/30 transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <Home className="w-4 h-4 text-white" />
+                  <span>Home Portal</span>
+                </div>
+                <ChevronRight className="w-3.5 h-3.5 text-cyan-200" />
+              </button>
+
+              <div className="p-3.5 bg-slate-800/60 rounded-2xl border border-slate-700/50 space-y-2 text-center">
+                <p className="text-xs font-bold text-slate-200">Main Menu Access</p>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Sign in with your staff or admin credentials to unlock full workspace controls.
+                </p>
                 <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30 font-semibold'
-                      : 'hover:bg-slate-800 text-slate-300 hover:text-white'
-                  }`}
+                  onClick={() => {
+                    if (onOpenLoginModal) {
+                      onOpenLoginModal();
+                    } else {
+                      setActiveTab('dashboard');
+                    }
+                  }}
+                  className="w-full mt-1 py-2 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
                 >
-                  <div className="flex items-center gap-3">
-                    <IconComponent className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                    <span>{item.label}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {item.badge && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${item.badgeColor}`}>
-                        {item.badge}
-                      </span>
-                    )}
-                    {isActive && <ChevronRight className="w-3.5 h-3.5 text-cyan-200" />}
-                  </div>
+                  Sign In / Access Dashboard
                 </button>
-              );
-            })}
-          </nav>
+              </div>
+            </div>
+          ) : (
+            /* WHEN LOGGED IN / IN DASHBOARD, MAIN MENU IS FULLY VISIBLE */
+            <nav className="space-y-1">
+              <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 px-3 mb-2">
+                Main Menu
+              </p>
+              {visibleItems.map((item) => {
+                const IconComponent = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30 font-semibold'
+                        : 'hover:bg-slate-800 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <IconComponent className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                      <span>{item.label}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {item.badge && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${item.badgeColor}`}>
+                          {item.badge}
+                        </span>
+                      )}
+                      {isActive && <ChevronRight className="w-3.5 h-3.5 text-cyan-200" />}
+                    </div>
+                  </button>
+                );
+              })}
+            </nav>
+          )}
         </div>
       </div>
 

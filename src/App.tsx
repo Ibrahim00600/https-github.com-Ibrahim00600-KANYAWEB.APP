@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
 import { Sidebar, TabType } from './components/Sidebar';
@@ -16,18 +16,41 @@ import { CustomerPortal } from './components/customers/CustomerPortal';
 import { UserManagement } from './components/users/UserManagement';
 import { ReportsView } from './components/reports/ReportsView';
 import { SystemSettingsView } from './components/settings/SystemSettingsView';
+import { auth, onAuthStateChanged, FirebaseUser } from './lib/firebase';
 
 const MainContent: React.FC = () => {
   const { currentUser } = useApp();
   const [activeTab, setActiveTab] = useState<TabType>('home');
+  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
 
   // Shared Modals state triggered from Dashboard or sub views
   const [isProductionModalOpen, setIsProductionModalOpen] = useState(false);
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
 
-  // If role is Customer and user clicks tabs, ensure seamless navigation
+  // Listen to Firebase auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user);
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Redirect unauthenticated users to the Home screen if attempting to access dashboard tabs
+  useEffect(() => {
+    if (!isAuthLoading && !authUser && activeTab !== 'home') {
+      setActiveTab('home');
+    }
+  }, [authUser, activeTab, isAuthLoading]);
+
+  // Tab change handler strictly enforcing auth gate
   const handleTabChange = (tab: TabType) => {
+    if (!authUser && tab !== 'home') {
+      setActiveTab('home');
+      return;
+    }
     setActiveTab(tab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -41,14 +64,16 @@ const MainContent: React.FC = () => {
       {/* Body Area with Sidebar and Main Tab Workspace */}
       <div className="flex-1 flex max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 gap-6 items-start">
         
-        {/* Left Navigation Sidebar */}
-        <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} />
+        {/* Left Navigation Sidebar - Strictly gated behind Firebase auth check */}
+        {authUser && <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} />}
 
         {/* Main Content Workspace Panel */}
         <main className="flex-1 min-w-0">
-          {activeTab === 'home' && <HomePageView onNavigateTab={handleTabChange} />}
+          {(activeTab === 'home' || !authUser) && (
+            <HomePageView onNavigateTab={handleTabChange} />
+          )}
 
-          {activeTab === 'dashboard' && (
+          {authUser && activeTab === 'dashboard' && (
             <Dashboard
               setActiveTab={handleTabChange}
               onOpenRecordProduction={() => {
@@ -66,44 +91,44 @@ const MainContent: React.FC = () => {
             />
           )}
 
-          {activeTab === 'production' && (
+          {authUser && activeTab === 'production' && (
             <ProductionList
               isModalOpen={isProductionModalOpen}
               setIsModalOpen={setIsProductionModalOpen}
             />
           )}
 
-          {activeTab === 'operator_hub' && <OperatorHubView />}
+          {authUser && activeTab === 'operator_hub' && <OperatorHubView />}
 
-          {activeTab === 'inventory' && <InventoryList />}
+          {authUser && activeTab === 'inventory' && <InventoryList />}
 
-          {activeTab === 'sales' && (
+          {authUser && activeTab === 'sales' && (
             <SalesList
               isModalOpen={isSaleModalOpen}
               setIsModalOpen={setIsSaleModalOpen}
             />
           )}
 
-          {activeTab === 'debts' && <DebtsView />}
+          {authUser && activeTab === 'debts' && <DebtsView />}
 
-          {activeTab === 'staff_advances' && <StaffAdvancesView />}
+          {authUser && activeTab === 'staff_advances' && <StaffAdvancesView />}
 
-          {activeTab === 'deliveries' && (
+          {authUser && activeTab === 'deliveries' && (
             <DeliveryList
               isModalOpen={isDeliveryModalOpen}
               setIsModalOpen={setIsDeliveryModalOpen}
             />
           )}
 
-          {activeTab === 'messaging' && <MessagingView />}
+          {authUser && activeTab === 'messaging' && <MessagingView />}
 
-          {activeTab === 'customer_portal' && <CustomerPortal />}
+          {authUser && activeTab === 'customer_portal' && <CustomerPortal />}
 
-          {activeTab === 'users' && <UserManagement />}
+          {authUser && activeTab === 'users' && <UserManagement />}
 
-          {activeTab === 'reports' && <ReportsView />}
+          {authUser && activeTab === 'reports' && <ReportsView />}
 
-          {activeTab === 'settings' && <SystemSettingsView />}
+          {authUser && activeTab === 'settings' && <SystemSettingsView />}
         </main>
 
       </div>

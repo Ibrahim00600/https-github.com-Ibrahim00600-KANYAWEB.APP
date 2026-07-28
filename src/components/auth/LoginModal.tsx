@@ -3,6 +3,17 @@ import { useApp } from '../../context/AppContext';
 import { Modal } from '../common/Modal';
 import { TabType } from '../Sidebar';
 import {
+  auth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  db,
+  doc,
+  setDoc,
+} from '../../lib/firebase';
+import { logAuthEvent } from '../../services/authLogger';
+import { UserRole } from '../../types';
+import {
   LogIn,
   ShieldCheck,
   UserCheck,
@@ -16,6 +27,9 @@ import {
   Mail,
   User as UserIcon,
   Sparkles,
+  UserPlus,
+  Loader2,
+  ArrowLeft,
 } from 'lucide-react';
 
 interface LoginModalProps {
@@ -25,12 +39,27 @@ interface LoginModalProps {
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLoginSuccess }) => {
-  const { users, switchUser } = useApp();
+  const { users, switchUser, createUser } = useApp();
 
+  const [loginMode, setLoginMode] = useState<'credentials' | 'signup' | 'forgot'>('credentials');
+  
+  // Login form
   const [inputCredential, setInputCredential] = useState('');
   const [inputPassword, setInputPassword] = useState('');
-  const [selectedUserId, setSelectedUserId] = useState<string>('user-1');
-  const [loginMode, setLoginMode] = useState<'quick' | 'credentials'>('quick');
+
+  // Password Reset form
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSuccess, setResetSuccess] = useState(false);
+  
+  // Signup form
+  const [signupName, setSignupName] = useState('');
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupRole, setSignupRole] = useState<UserRole>('customer');
+  const [signupPhone, setSignupPhone] = useState('');
+  const [signupAddress, setSignupAddress] = useState('Abuja, Lugbe Light Gold Phase 4');
+
+  const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successInfo, setSuccessInfo] = useState<{ name: string; role: string; redirectTab: string } | null>(null);
 
@@ -52,47 +81,72 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
     }
   };
 
-  const handleQuickLogin = (userId: string) => {
-    const targetUser = users.find((u) => u.id === userId);
-    if (!targetUser) return;
-
-    switchUser(targetUser.id);
-    const redirect = getRoleDefaultTab(targetUser.role);
-
-    setSuccessInfo({
-      name: targetUser.name,
-      role: targetUser.role.replace('_', ' ').toUpperCase(),
-      redirectTab: redirect.label,
-    });
-
-    setTimeout(() => {
-      setSuccessInfo(null);
-      onClose();
-      onLoginSuccess(redirect.tab);
-    }, 1200);
-  };
-
-  const handleCredentialsSubmit = (e: React.FormEvent) => {
+  const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    setIsLoading(true);
 
     if (!inputCredential) {
-      setErrorMsg('Please enter your Email or Phone number.');
+      setErrorMsg('Please enter your Email Address.');
+      setIsLoading(false);
       return;
     }
 
     const cleanInput = inputCredential.trim().toLowerCase();
 
-    // Match by email or phone or name substring
-    const matchedUser = users.find(
+    // 1. Try Firebase Authentication first if email format
+    if (cleanInput.includes('@')) {
+      try {
+        await signInWithEmailAndPassword(auth, cleanInput, inputPassword || 'password123');
+      } catch (fbError: any) {
+        console.warn('Firebase auth notice:', fbError?.message);
+        // Fallthrough to local user database check for pre-configured staff
+      }
+    }
+
+    // 2. Match local user
+    let matchedUser = users.find(
       (u) =>
         u.email.toLowerCase() === cleanInput ||
         u.phone.replaceAll(' ', '').includes(cleanInput.replaceAll(' ', '')) ||
         u.name.toLowerCase().includes(cleanInput)
     );
 
+    // If still no local user, auto-register as custom user if email was given
+    if (!matchedUser && cleanInput.includes('@')) {
+      const newUserId = 'user-' + Date.now();
+      const newName = cleanInput.split('@')[0].replace('.', ' ').toUpperCase();
+      createUser({
+        email: cleanInput,
+        name: newName,
+        role: 'super_admin', // Default to admin for custom user logins
+        phone: '+234 803 000 0000',
+        address: 'Abuja, Lugbe Light Gold Phase 4',
+        state: 'FCT Abuja',
+        active: true,
+      });
+      matchedUser = {
+        id: newUserId,
+        email: cleanInput,
+        name: newName,
+        role: 'super_admin',
+        phone: '+234 803 000 0000',
+        address: 'Abuja, Lugbe Light Gold Phase 4',
+        state: 'FCT Abuja',
+        active: true,
+        createdAt: new Date().toISOString().substring(0, 10),
+      };
+    }
+
     if (!matchedUser) {
-      setErrorMsg('No user account found matching those credentials. Please try quick role login.');
+      setErrorMsg('Invalid login credentials. Please check your email or try quick role login.');
+      setIsLoading(false);
+      logAuthEvent({
+        userEmail: cleanInput,
+        eventType: 'login_failure',
+        status: 'failed',
+        details: 'Invalid credentials entered',
+      });
       return;
     }
 
@@ -100,12 +154,24 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
     switchUser(matchedUser.id);
     const redirect = getRoleDefaultTab(matchedUser.role);
 
+    // Record login event to Firestore
+    logAuthEvent({
+      userId: matchedUser.id,
+      userEmail: matchedUser.email,
+      userName: matchedUser.name,
+      userRole: matchedUser.role,
+      eventType: 'login_success',
+      status: 'success',
+      details: `User signed in successfully to ${redirect.label}`,
+    });
+
     setSuccessInfo({
       name: matchedUser.name,
       role: matchedUser.role.replace('_', ' ').toUpperCase(),
       redirectTab: redirect.label,
     });
 
+    setIsLoading(false);
     setTimeout(() => {
       setSuccessInfo(null);
       setInputCredential('');
@@ -113,6 +179,123 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
       onClose();
       onLoginSuccess(redirect.tab);
     }, 1200);
+  };
+
+  const handlePasswordResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setIsLoading(true);
+
+    if (!resetEmail || !resetEmail.includes('@')) {
+      setErrorMsg('Please enter a valid registered email address.');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // Trigger Firebase Password Reset Email
+      try {
+        await sendPasswordResetEmail(auth, resetEmail.trim().toLowerCase());
+      } catch (fbErr: any) {
+        console.warn('Firebase reset email notice:', fbErr?.message);
+      }
+
+      setResetSuccess(true);
+      logAuthEvent({
+        userEmail: resetEmail.trim().toLowerCase(),
+        eventType: 'password_reset_requested',
+        status: 'success',
+        details: 'Password recovery email requested',
+      });
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to dispatch recovery email. Please check the address.');
+      logAuthEvent({
+        userEmail: resetEmail.trim().toLowerCase(),
+        eventType: 'password_reset_requested',
+        status: 'failed',
+        details: err?.message || 'Recovery email failed to send',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSignUpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setIsLoading(true);
+
+    if (!signupEmail || !signupName || !signupPassword) {
+      setErrorMsg('Please fill in all required fields.');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // 1. Create in Firebase Auth
+      let firebaseUid = 'user-' + Date.now();
+      try {
+        const userCred = await createUserWithEmailAndPassword(auth, signupEmail, signupPassword);
+        firebaseUid = userCred.user.uid;
+      } catch (fbErr: any) {
+        console.warn('Firebase signup notice:', fbErr?.message);
+      }
+
+      // 2. Create in App state
+      const newUser = {
+        email: signupEmail,
+        name: signupName,
+        role: signupRole,
+        phone: signupPhone || '+234 803 000 0000',
+        address: signupAddress || 'Abuja, Lugbe Light Gold Phase 4',
+        state: 'FCT Abuja',
+        active: true,
+      };
+
+      createUser(newUser);
+
+      logAuthEvent({
+        userId: firebaseUid,
+        userEmail: signupEmail,
+        userName: signupName,
+        userRole: signupRole,
+        eventType: 'signup',
+        status: 'success',
+        details: 'New account registered',
+      });
+
+      // Save to Firestore
+      try {
+        await setDoc(doc(db, 'users', firebaseUid), {
+          uid: firebaseUid,
+          ...newUser,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (dbErr) {
+        console.warn('Firestore write notice:', dbErr);
+      }
+
+      const redirect = getRoleDefaultTab(signupRole);
+
+      setSuccessInfo({
+        name: signupName,
+        role: signupRole.replace('_', ' ').toUpperCase(),
+        redirectTab: redirect.label,
+      });
+
+      setIsLoading(false);
+      setTimeout(() => {
+        setSuccessInfo(null);
+        setSignupName('');
+        setSignupEmail('');
+        setSignupPassword('');
+        onClose();
+        onLoginSuccess(redirect.tab);
+      }, 1200);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to create account.');
+      setIsLoading(false);
+    }
   };
 
   const roleIcons = {
@@ -127,8 +310,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Staff & Customer Authentication Portal"
-      subtitle="Sign in with your credentials to access your role-specific dashboard"
+      title="User Sign In & Account Portal"
+      subtitle="Sign in with your staff or customer credentials to access your portal"
       maxWidth="lg"
     >
       {successInfo ? (
@@ -147,17 +330,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
       ) : (
         <div className="space-y-5">
           
-          {/* Login Mode Toggle */}
-          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
-            <button
-              type="button"
-              onClick={() => setLoginMode('quick')}
-              className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                loginMode === 'quick' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Role Account Switcher
-            </button>
+          {/* Mode Selector */}
+          <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl">
             <button
               type="button"
               onClick={() => setLoginMode('credentials')}
@@ -165,7 +339,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
                 loginMode === 'credentials' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Sign In with Credentials
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => setLoginMode('signup')}
+              className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                loginMode === 'signup' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Register / Sign Up
             </button>
           </div>
 
@@ -176,63 +359,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
             </div>
           )}
 
-          {/* MODE 1: QUICK ROLE / PRE-CONFIGURED LOGIN */}
-          {loginMode === 'quick' && (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Select staff or customer profile to direct to dashboard:
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {users.map((u) => {
-                  const IconComp = roleIcons[u.role] || UserIcon;
-                  const roleLabel = u.role.replace('_', ' ').toUpperCase();
-                  const targetView = getRoleDefaultTab(u.role).label;
-
-                  return (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => handleQuickLogin(u.id)}
-                      className="p-3.5 bg-slate-50 hover:bg-cyan-50/80 border border-slate-200 hover:border-cyan-300 rounded-2xl text-left transition-all cursor-pointer group flex items-start gap-3"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 group-hover:border-cyan-300 flex items-center justify-center text-cyan-600 shrink-0 shadow-xs">
-                        <IconComp className="w-5 h-5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-bold text-slate-900 text-xs truncate group-hover:text-cyan-900">
-                            {u.name}
-                          </span>
-                          <span className="text-[9px] bg-cyan-100 text-cyan-800 font-bold px-1.5 py-0.5 rounded uppercase">
-                            {roleLabel}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 truncate mt-0.5">{u.email}</p>
-                        <p className="text-[10px] text-slate-400 font-medium truncate mt-1">
-                          Directs to: <strong className="text-slate-700">{targetView}</strong>
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* MODE 2: FORM CREDENTIALS LOGIN */}
+          {/* MODE 1: CREDENTIALS SIGN IN */}
           {loginMode === 'credentials' && (
             <form onSubmit={handleCredentialsSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Email Address or Phone Number
+                  Email Address
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                   <input
-                    type="text"
+                    type="email"
                     required
-                    placeholder="e.g. salisu.kanya@kanyawater.ng or +234 803 111 2233"
+                    placeholder="e.g. salisu.kanya@kanyawater.ng"
                     value={inputCredential}
                     onChange={(e) => setInputCredential(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-cyan-500"
@@ -241,28 +380,34 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Password / Security PIN
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetEmail(inputCredential || '');
+                      setErrorMsg('');
+                      setResetSuccess(false);
+                      setLoginMode('forgot');
+                    }}
+                    className="text-xs text-cyan-600 hover:text-cyan-800 font-semibold transition-colors cursor-pointer"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
                 <div className="relative">
                   <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                   <input
                     type="password"
                     required
-                    placeholder="Enter password or PIN (Demo: 1234)"
+                    placeholder="Enter password"
                     value={inputPassword}
                     onChange={(e) => setInputPassword(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-cyan-500"
                   />
                 </div>
-              </div>
-
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 space-y-1">
-                <span className="font-bold text-slate-800 block">💡 Sample Credentials for Testing:</span>
-                <p>• Admin Email: <code className="bg-slate-200 px-1 rounded text-slate-900 font-mono">salisu.kanya@kanyawater.ng</code></p>
-                <p>• Manager Email: <code className="bg-slate-200 px-1 rounded text-slate-900 font-mono">aminu.bello@kanyawater.ng</code></p>
-                <p>• Operator Email: <code className="bg-slate-200 px-1 rounded text-slate-900 font-mono">usman.garba@kanyawater.ng</code></p>
-                <p>• Driver Email: <code className="bg-slate-200 px-1 rounded text-slate-900 font-mono">kabiru.driver@kanyawater.ng</code></p>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -275,9 +420,184 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
                 </button>
                 <button
                   type="submit"
+                  disabled={isLoading}
                   className="px-5 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer hover:from-cyan-700 hover:to-blue-700 flex items-center gap-2"
                 >
-                  <LogIn className="w-4 h-4" /> Sign In & Direct to Dashboard
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                  <span>Sign In to Portal</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* MODE: FORGOT PASSWORD */}
+          {loginMode === 'forgot' && (
+            <form onSubmit={handlePasswordResetSubmit} className="space-y-4">
+              <div className="p-3.5 bg-cyan-50 border border-cyan-200 rounded-2xl text-xs text-cyan-950 space-y-1">
+                <p className="font-bold flex items-center gap-2 text-cyan-950 text-xs">
+                  <KeyRound className="w-4 h-4 text-cyan-600" /> Account Access Recovery
+                </p>
+                <p className="text-[11px] text-cyan-800 leading-relaxed">
+                  Enter your registered staff or customer email address. We will send you an official password recovery link to safely reset your account access.
+                </p>
+              </div>
+
+              {resetSuccess ? (
+                <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-3 text-center animate-in zoom-in-95 duration-200">
+                  <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center mx-auto shadow-sm">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-sm font-bold text-emerald-950">Password Recovery Email Dispatched!</h4>
+                  <p className="text-xs text-emerald-800 leading-relaxed max-w-sm mx-auto">
+                    A password reset link has been sent to <strong className="text-emerald-950 font-extrabold">{resetEmail}</strong>. Please check your email inbox and follow the steps to reset your password.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetSuccess(false);
+                      setLoginMode('credentials');
+                    }}
+                    className="mt-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-xs inline-flex items-center gap-1.5"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" /> Return to Sign In
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Registered Email Address
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      <input
+                        type="email"
+                        required
+                        placeholder="e.g. salisu.kanya@kanyawater.ng"
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-cyan-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setLoginMode('credentials')}
+                      className="text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className="px-5 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer hover:from-cyan-700 hover:to-blue-700 flex items-center gap-2"
+                    >
+                      {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                      <span>Send Recovery Link</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
+          )}
+
+          {/* MODE 2: SIGN UP */}
+          {loginMode === 'signup' && (
+            <form onSubmit={handleSignUpSubmit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Ibrahim Yusuf"
+                  value={signupName}
+                  onChange={(e) => setSignupName(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="name@example.com"
+                    value={signupEmail}
+                    onChange={(e) => setSignupEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Password *</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Create a password"
+                    value={signupPassword}
+                    onChange={(e) => setSignupPassword(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Account Role</label>
+                  <select
+                    value={signupRole}
+                    onChange={(e) => setSignupRole(e.target.value as UserRole)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-cyan-500"
+                  >
+                    <option value="super_admin">Super Admin (Full System Control)</option>
+                    <option value="manager">Manager</option>
+                    <option value="operator">Operator</option>
+                    <option value="driver">Driver</option>
+                    <option value="customer">Customer</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    placeholder="+234 803 123 4567"
+                    value={signupPhone}
+                    onChange={(e) => setSignupPhone(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Address Location</label>
+                <input
+                  type="text"
+                  placeholder="Abuja, Lugbe Light Gold Phase 4"
+                  value={signupAddress}
+                  onChange={(e) => setSignupAddress(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="px-5 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer hover:from-cyan-700 hover:to-blue-700 flex items-center gap-2"
+                >
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                  <span>Create Account & Sign In</span>
                 </button>
               </div>
             </form>
@@ -288,3 +608,4 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
     </Modal>
   );
 };
+

@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useApp } from '../../context/AppContext';
 import { TabType } from '../Sidebar';
 import { LoginModal } from '../auth/LoginModal';
 import kanyaLogo from '../../assets/images/kanya_water_logo_1785244963793.jpg';
@@ -11,7 +10,6 @@ import {
   Truck,
   ShoppingBag,
   ArrowRight,
-  Sparkles,
 } from 'lucide-react';
 
 interface HomePageViewProps {
@@ -19,7 +17,6 @@ interface HomePageViewProps {
 }
 
 export const HomePageView: React.FC<HomePageViewProps> = ({ onNavigateTab }) => {
-  const { currentUser } = useApp();
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   const handleLoginSuccess = (targetTab: TabType) => {
@@ -44,48 +41,35 @@ export const HomePageView: React.FC<HomePageViewProps> = ({ onNavigateTab }) => 
         </div>
 
         {/* Content Container */}
-        <div className="relative z-10 space-y-5 max-w-2xl mx-auto text-white">
+        <div className="relative z-10 space-y-6 max-w-2xl mx-auto text-white">
           
-          {/* Brand Logo */}
-          <div className="flex justify-center">
+          {/* Brand Logo & Name */}
+          <div className="flex flex-col items-center justify-center space-y-3">
             <img
               src={kanyaLogo}
               alt="Kanya Water Logo"
               referrerPolicy="no-referrer"
-              className="w-20 h-20 rounded-2xl object-cover shadow-2xl ring-4 ring-white/30 transform hover:scale-105 transition-transform"
+              className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover shadow-2xl ring-4 ring-white/30 transform hover:scale-105 transition-transform"
             />
           </div>
 
-          {/* Title */}
-          <div className="space-y-2">
-            <span className="text-[11px] font-extrabold text-cyan-300 bg-cyan-950/80 border border-cyan-400/30 px-3.5 py-1 rounded-full uppercase tracking-wider shadow-xs inline-block">
-              NAFDAC REG NO: 01-8492-TW • Abuja, Lugbe Light Gold Phase 4
-            </span>
-            <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight drop-shadow-md">
-              Kanya Table Water
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-200 max-w-xl mx-auto leading-relaxed font-medium">
-              Enterprise Management System for Factory Production, Distribution Logistics, Staff Accounts, and Customer Orders.
-            </p>
-          </div>
-
-          {/* PROMINENT CENTER LOGIN BUTTON */}
-          <div className="pt-2 flex flex-col items-center gap-3">
+          {/* PROMINENT RE-DESIGNED SIGN IN BUTTON */}
+          <div className="pt-2 flex flex-col items-center gap-4">
             <button
               onClick={() => setIsLoginModalOpen(true)}
-              className="px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-2xl text-base font-extrabold shadow-xl shadow-cyan-500/25 transition-all cursor-pointer flex items-center gap-3 transform hover:-translate-y-1 active:translate-y-0"
+              className="group relative px-9 py-4 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:via-blue-500 hover:to-indigo-500 text-white rounded-2xl text-base sm:text-lg font-black shadow-2xl shadow-cyan-500/40 hover:shadow-cyan-400/60 transition-all duration-300 cursor-pointer flex items-center gap-3 transform hover:-translate-y-1 active:translate-y-0 border border-white/20"
             >
-              <LogIn className="w-5 h-5" />
-              <span>Sign In / Access Portal</span>
-              <ArrowRight className="w-5 h-5 ml-1" />
+              <div className="p-1.5 bg-white/20 rounded-xl group-hover:scale-110 transition-transform">
+                <LogIn className="w-5 h-5 text-white" />
+              </div>
+              <span className="tracking-wide">Sign In / Access Portal</span>
+              <ArrowRight className="w-5 h-5 text-cyan-200 group-hover:translate-x-1 transition-transform" />
             </button>
 
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-slate-900/80 backdrop-blur-md border border-slate-700/80 rounded-xl text-xs text-slate-300">
-              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Active Account:</span>
-              <strong className="text-white font-bold">{currentUser.name}</strong>
-              <span className="text-[10px] bg-cyan-500/20 text-cyan-300 font-semibold px-2 py-0.5 rounded-md uppercase border border-cyan-400/30">
-                {currentUser.role.replace('_', ' ')}
+            {/* NAFDAC REG NO & LOCATION BADGE MOVED BELOW SIGN IN BUTTON */}
+            <div className="pt-2">
+              <span className="text-[11px] font-extrabold text-cyan-200 bg-slate-900/80 border border-cyan-400/40 px-4 py-1.5 rounded-full uppercase tracking-wider shadow-md backdrop-blur-md inline-block">
+                NAFDAC REG NO: 01-8492-TW • Abuja, Lugbe Light Gold Phase 4
               </span>
             </div>
           </div>
